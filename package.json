@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force && npm run db:seed"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
@@ -62,6 +64,7 @@
     "@types/react-modal": "^3.16.3",
     "eslint": "^8.56.0",
     "eslint-config-next": "14.0.4",
+    "tsx": "^4.20.6",
     "typescript": "^5.3.3"
   }
 }
