@@ -1,0 +1,456 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  phone          String?   @unique
+  password       String
+  role           UserRole  @default(CUSTOMER)
+  restaurantId   String?
+  loyaltyPoints  Int       @default(0)
+  emailVerified  DateTime?
+  phoneVerified  Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  restaurant     Restaurant? @relation("RestaurantUsers", fields: [restaurantId], references: [id], onDelete: SetNull)
+  ownedRestaurant Restaurant? @relation("RestaurantOwner")
+  sessions       Session[]
+  feedback       Feedback[]
+  loyaltyTransactions LoyaltyTransaction[]
+  auditLogs      AuditLog[]
+  createdCoupons Coupon[]
+  notifications  Notification[]
+
+  @@map("users")
+}
+
+model Restaurant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  address     String
+  phone       String
+  email       String
+  logo        String?
+  coverImage  String?
+  theme       Json     // RestaurantTheme
+  settings    Json     // RestaurantSettings
+  isActive    Boolean  @default(true)
+  ownerId     String  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner       User               @relation("RestaurantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  users       User[]             @relation("RestaurantUsers")
+  tables      Table[]
+  categories  Category[]
+  menuItems   MenuItem[]
+  sessions    Session[]
+  orders      Order[]
+  payments    Payment[]
+  bills       Bill[]
+  feedback    Feedback[]
+  coupons     Coupon[]
+  notifications Notification[]
+  loyaltyTransactions LoyaltyTransaction[]
+  auditLogs   AuditLog[]
+
+  @@map("restaurants")
+}
+
+model Table {
+  id              String    @id @default(cuid())
+  restaurantId    String
+  number          String
+  qrCode          String    @unique
+  capacity        Int
+  isActive        Boolean   @default(true)
+  currentSessionId String?
+  location        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  restaurant      Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sessions        Session[]
+  orders          Order[]
+  bills           Bill[]
+  notifications   Notification[]
+
+  @@unique([restaurantId, number])
+  @@map("tables")
+}
+
+model Session {
+  id                String        @id @default(cuid())
+  tableId           String
+  restaurantId      String
+  customerId        String?
+  customerPhone     String?
+  status            SessionStatus @default(ACTIVE)
+  isReadyForBilling Boolean       @default(false)
+  startedAt         DateTime      @default(now())
+  endedAt           DateTime?
+  totalAmount       Float         @default(0)
+  paidAmount        Float         @default(0)
+  paymentStatus     PaymentStatus @default(PENDING)
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  table             Table                @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  restaurant        Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer          User?                @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cartItems         CartItem[]
+  orders            Order[]
+  payments          Payment[]
+  bills             Bill[]
+  feedback          Feedback[]
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@map("sessions")
+}
+
+model Category {
+  id           String   @id @default(cuid())
+  restaurantId String
+  name         String
+  description  String?
+  image        String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems    MenuItem[]
+
+  @@map("categories")
+}
+
+model MenuItem {
+  id                  String    @id @default(cuid())
+  restaurantId        String
+  categoryId          String
+  name                String
+  description         String?
+  price               Float
+  images              String[]  @default([])
+  isVeg               Boolean   @default(true)
+  isAvailable         Boolean   @default(true)
+  isRecommended       Boolean   @default(false)
+  preparationTime     Int       // in minutes
+  variants            Json      // MenuItemVariant[]
+  addOns              Json      // MenuItemAddOn[]
+  quickAddOrder       Int       @default(0)
+  recommendedQuantity Json?     // RecommendedQuantity
+  allergens           String[]  @default([])
+  nutritionalInfo     Json?     // NutritionalInfo
+  sortOrder           Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  restaurant          Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category            Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  cartItems           CartItem[]
+  orderItems          OrderItem[]
+
+  @@map("menu_items")
+}
+
+model CartItem {
+  id                  String   @id @default(cuid())
+  menuItemId          String
+  sessionId           String
+  quantity            Int
+  selectedVariant     Json?    // MenuItemVariant
+  selectedAddOns      Json     // SelectedAddOn[]
+  specialInstructions String?
+  price               Float
+  createdAt           DateTime @default(now())
+
+  // Relations
+  menuItem            MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  session             Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, sessionId])
+  @@map("cart_items")
+}
+
+model Order {
+  id                     String      @id @default(cuid())
+  sessionId              String
+  restaurantId           String
+  tableId                String
+  status                 OrderStatus @default(PLACED)
+  totalAmount            Float
+  estimatedPreparationTime Int
+  specialInstructions    String?
+  placedAt               DateTime    @default(now())
+  preparedAt             DateTime?
+  servedAt               DateTime?
+  cancelledAt            DateTime?
+  cancellationReason     String?
+
+  // Relations
+  session                Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  restaurant             Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table                  Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  items                  OrderItem[]
+  payments               Payment[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String    @id @default(cuid())
+  orderId             String
+  menuItemId          String
+  quantity            Int
+  selectedVariant     Json?     // MenuItemVariant
+  selectedAddOns      Json      // SelectedAddOn[]
+  specialInstructions String?
+  price               Float
+
+  // Relations
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem            MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  sessionId     String
+  restaurantId  String
+  orderId       String?
+  amount        Float
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  upiId         String?
+  bankDetails   Json?         // BankDetails
+  processedAt   DateTime      @default(now())
+  refundedAt    DateTime?
+  refundAmount  Float?
+  refundReason  String?
+
+  // Relations
+  session       Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  order         Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Bill {
+  id              String   @id @default(cuid())
+  sessionId       String
+  restaurantId    String
+  tableId         String
+  items           Json     // BillItem[]
+  subtotal        Float
+  taxAmount       Float
+  serviceCharge   Float
+  totalAmount     Float
+  discountAmount  Float    @default(0)
+  finalAmount     Float
+  paymentMethods  Json     // PaymentMethodSummary[]
+  billNumber      String   @unique
+  generatedAt     DateTime @default(now())
+  pdfUrl          String?
+
+  // Relations
+  session         Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  restaurant      Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table           Table        @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@map("bills")
+}
+
+model Feedback {
+  id            String   @id @default(cuid())
+  sessionId     String
+  restaurantId  String
+  customerId    String?
+  customerPhone String?
+  rating        Int      // 1-5
+  comments      String?
+  categories    Json     // FeedbackCategory[]
+  isAnonymous   Boolean  @default(false)
+  submittedAt   DateTime @default(now())
+
+  // Relations
+  session       Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  restaurant    Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer      User?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@map("feedback")
+}
+
+model LoyaltyTransaction {
+  id           String   @id @default(cuid())
+  customerId   String
+  restaurantId String
+  sessionId    String?
+  type         LoyaltyType
+  points       Int
+  reason       String
+  description  String?
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  customer     User      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  session      Session?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@map("loyalty_transactions")
+}
+
+model Coupon {
+  id                String    @id @default(cuid())
+  restaurantId      String
+  code              String
+  name              String
+  description       String?
+  type              CouponType
+  value             Float
+  minOrderAmount    Float?
+  maxDiscountAmount Float?
+  validFrom         DateTime
+  validUntil        DateTime
+  usageLimit        Int?
+  usedCount         Int       @default(0)
+  isActive          Boolean   @default(true)
+  applicableItems   String[]  @default([]) // menu item IDs
+  createdBy         String
+  createdAt         DateTime  @default(now())
+
+  // Relations
+  restaurant        Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  creator           User       @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, code])
+  @@map("coupons")
+}
+
+model Notification {
+  id           String           @id @default(cuid())
+  userId       String?
+  restaurantId String
+  tableId      String?
+  sessionId    String?
+  type         NotificationType
+  title        String
+  message      String
+  data         Json?
+  isRead       Boolean          @default(false)
+  sentAt       DateTime         @default(now())
+  readAt       DateTime?
+
+  // Relations
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  table        Table?       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  restaurantId String
+  userId       String?
+  action       String
+  entityType   String
+  entityId     String
+  oldValues    Json?
+  newValues    Json?
+  ipAddress    String?
+  userAgent    String?
+  timestamp    DateTime @default(now())
+
+  // Relations
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  STAFF
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+}
+
+enum OrderStatus {
+  PLACED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  UPI
+  CARD
+  CASH
+  WALLET
+  SPLIT
+}
+
+enum LoyaltyType {
+  EARNED
+  REDEEMED
+  EXPIRED
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+  FREE_ITEM
+}
+
+enum NotificationType {
+  NEW_ORDER
+  ORDER_READY
+  PAYMENT_RECEIVED
+  FEEDBACK_RECEIVED
+  LOYALTY_POINTS
+  SYSTEM_ALERT
+  PROMOTION
+}
